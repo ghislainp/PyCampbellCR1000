@@ -82,12 +82,12 @@ class PakBus(object):
                  src_addr=0x802, src_node=None, security_code=0x0000):
         self.link = link
         self.src_addr = src_addr
-        if (src_node != None):
+        if src_node is not None:
             self.src_node = src_node
         else:
             self.src_node = src_addr
         self.dest_addr = dest_addr
-        if (dest_node != None):
+        if dest_node is not None:
             self.dest_node = dest_node
         else:
             self.dest_node = dest_addr
@@ -250,25 +250,30 @@ class PakBus(object):
             fmt = self.DATATYPE[type_]['fmt']  # get default format for type_
             value = values[i]
 
-            if type_ == 'ASCIIZ':
-                # special handling: nul-terminated string
-                value += '\0'
-                # Add nul to end of string
-                fmt_ = str('%d%s' % (len(value), fmt))
-                if is_py3:
-                    enc = struct.pack(fmt_, bytes(value, encoding='utf8'))
-                else:
+            try:
+                if type_ == 'ASCIIZ':
+                    # special handling: nul-terminated string
+                    value += '\0'
+                    # Add nul to end of string
+                    fmt_ = str('%d%s' % (len(value), fmt))
+                    if is_py3:
+                        enc = struct.pack(fmt_, bytes(value, encoding='utf8'))
+                    else:
+                        enc = struct.pack(fmt_, str(value))
+                elif type_ == 'ASCII':
+                    # special handling: fixed-length string
+                    fmt_ = str('%d%s' % (len(value), fmt))
                     enc = struct.pack(fmt_, str(value))
-            elif type_ == 'ASCII':
-                # special handling: fixed-length string
-                fmt_ = str('%d%s' % (len(value), fmt))
-                enc = struct.pack(fmt_, str(value))
-            elif type_ == 'NSec':
-                # special handling: NSec time
-                enc = struct.pack(str(fmt), value[0], value[1])
-            else:
-                # default encoding scheme
-                enc = struct.pack(str(fmt), value)
+                elif type_ == 'NSec':
+                    # special handling: NSec time
+                    enc = struct.pack(str(fmt), value[0], value[1])
+                else:
+                    # default encoding scheme
+                    enc = struct.pack(str(fmt), value)
+
+            except struct.error as e:
+                print(type_, value)
+                raise e
 
             buff.append(enc)
         return b''.join(buff)
@@ -370,6 +375,10 @@ class PakBus(object):
             msg = self.unpack_fileupload_response(msg)
         elif hdr['HiProtoCode'] == 1 and msg['MsgType'] == 0xa1:
             msg = self.unpack_pleasewait_response(msg)
+        elif hdr['HiProtoCode'] == 1 and msg['MsgType'] == 0x9a:
+            msg = self.unpack_get_values_response(msg)
+        elif hdr['HiProtoCode'] == 1 and msg['MsgType'] == 0x9b:
+            msg = self.unpack_set_values_response(msg)
         else:
             LOGGER.error('No implementation for <(%r, %r)> packet type'
                          % (hdr['HiProtoCode'], msg['MsgType']))
@@ -673,7 +682,7 @@ class PakBus(object):
 
                 # Extract field name
                 values, size = self.decode_bin(['ASCIIZ'], raw[offset:])
-                fld['FieldName'] = values[0]
+                fld['field_name'] = values[0]
                 offset += size
 
                 # Extract AliasName list
@@ -734,8 +743,8 @@ class PakBus(object):
 
             # Provide table name
             t_frag = tabledef[frag['TableNbr'] - 1]
-            tablename = t_frag['Header']['TableName']
-            frag['TableName'] = tablename
+            table_name = t_frag['Header']['TableName']
+            frag['TableName'] = table_name
 
             # Decode number of records (16 bits) or ByteOffset (32 Bits)
             (isoffset,), size = self.decode_bin(['Byte'], raw[offset:])
@@ -798,19 +807,19 @@ class PakBus(object):
                         fields = range(1, len(fields) + 1)
 
                     for field in fields:
-                        fieldname = t_frag['Fields'][field - 1]['FieldName']
+                        field_name = t_frag['Fields'][field - 1]['field_name']
                         fieldtype = t_frag['Fields'][field - 1]['FieldType']
                         dimension = t_frag['Fields'][field - 1]['Dimension']
                         if fieldtype == 'ASCII':
                             values, size = self.decode_bin([fieldtype],
                                                            raw[offset:],
                                                            dimension)
-                            record['Fields'][fieldname] = values[0]
+                            record['Fields'][field_name] = values[0]
                         else:
                             values, size = \
                                 self.decode_bin(dimension * [fieldtype],
                                                 raw[offset:])
-                            record['Fields'][fieldname] = values[0]
+                            record['Fields'][field_name] = values[0]
                         offset += size
                     frag['RecFrag'].append(record)
 
@@ -819,6 +828,77 @@ class PakBus(object):
         # Get flag if more records exist
         (more_rec,), size = self.decode_bin(['Bool'], raw[offset:])
         return recdata, more_rec
+
+    def get_values_cmd(self, table_name, type_, field_name, swath=1):
+        """ Create Get Values Command packet
+
+table_name:    Table name as string
+type_:         Type name as defined in datatype (e.g. 'Byte')
+field_name:    Field name (including index if applicable)
+swath:        Number of columns to retrieve from an indexed field
+"""
+
+        transac_id = self.transaction.next_id()
+        # BMP5 Application Packet
+        hdr = self.pack_header(0x1)
+        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2'],
+                               [0x1a, transac_id, self.security_code, table_name, self.DATATYPE[type_]['code'], field_name, swath])
+        return b''.join((hdr, msg)), transac_id
+
+    def unpack_get_values_response(self, msg):
+        """
+     Decode Get Values Response packet
+
+     msg: decoded default message - must contain msg['raw']
+     """
+        [msg['RespCode']], size = self.decode_bin(['Byte'], msg['raw'][2])
+        msg['Values'] = msg['raw'][3:] # return raw coded values for later parsing
+        return msg
+
+    def parse_values(self, raw, type_, swath=1):
+        """
+     Parse values retrieved from get values command
+
+     raw:      Raw coded data string containing values (as returned by decode_pkt)
+     Type:     Data type name as defined in datatype
+     Swath:    Number of columns to retrieve from an indexed field
+     """
+        values, size = self.decode_bin(swath * [type_], raw)
+        return values
+
+    def set_values_cmd(self, table_name, type_, field_name, value, swath=1):
+        """
+     Create Set Values Command packet
+
+     table_name:    Table name as string
+     type_:         Type name as defined in datatype (e.g. 'Byte')
+     field_name:    Field name (including index if applicable)
+     swath:        Number of columns to retrieve from an indexed field
+     value:        Values to set in the datalogger repeated as needed according to the Swath. The TypeCode
+                   and the number of elements requested
+                   determine the size of this field.
+     """
+
+#        if swath == 1:
+#            value = [value]
+
+        transac_id = self.transaction.next_id()
+        # BMP5 Application Packet
+        hdr = self.pack_header(0x1)
+        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2', type_],
+                                [0x1b, transac_id, self.security_code, table_name, self.DATATYPE[type_]['code'], field_name, swath, value])
+
+        return b''.join((hdr, msg)), transac_id
+
+    def unpack_set_values_response(self, msg):
+        """
+     Decode Set Values Response packet
+
+     msg: decoded default message - must contain msg['raw']
+     """
+        [msg['RespCode']], size = self.decode_bin(['Byte'], msg['raw'][2])
+        #msg['Values'] = msg['raw'][3:] # return raw coded values for later parsing
+        return msg
 
     def __del__(self):
         self.link.close()

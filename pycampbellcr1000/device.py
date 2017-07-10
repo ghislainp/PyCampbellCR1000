@@ -176,6 +176,15 @@ class CR1000(object):
         tabledef = self.pakbus.parse_tabledef(data)
         return tabledef
 
+    def table_fields(self, tablename):
+        """Return a dict with the field_name as key and field information as value"""
+        fields = [i['Fields'] for i in self.table_def if i['Header']['TableName'] == tablename]
+
+        if len(fields) != 1:
+            raise Exception("TableName is absent (or duplicated)")
+
+        return {item['field_name']: item for item in fields[0]}
+
     def list_tables(self):
         '''List the tables available in the datalogger.'''
         return [item['Header']['TableName'] for item in self.table_def]
@@ -294,6 +303,39 @@ class CR1000(object):
         if data:
             data['CompTime'] = nsec_to_time(data['CompTime'])
         return data
+
+    def get_values(self, tablename, fieldname, swath=1, type_=None):
+        """Get the values from a variable as a list, possibly returning many variable if swath>1"""
+
+        if type_ is None:  # return in native type
+            type_ = self.table_fields(tablename)[fieldname]['FieldType']
+
+        # Send Get Values Command and wait for repsonse
+        hdr, msg, send_time = self.send_wait(self.pakbus.get_values_cmd(tablename, type_, fieldname, swath=swath))
+
+        values = self.pakbus.unpack_get_values_response(msg)['Values']
+        parse = self.pakbus.parse_values(values, type_)
+        return parse
+
+    def get_value(self, tablename, fieldname, type_=None):
+        """Get the value from a variable"""
+
+        return self.get_values(tablename, fieldname, swath=1, type_=type_)[0]
+
+    def set_value(self, tablename, fieldname, value, type_=None):
+        """Set the value for a variable"""
+
+        if type_ is None:  # try to guess
+            if isinstance(value, float):
+                type_ = "IEEE8L"
+            elif isinstance(value, int):
+                type_ = "Long"
+            else:
+                type_ = "ASCIIZ"
+
+        hdr, msg, send_time = self.send_wait(self.pakbus.set_values_cmd(tablename, type_, fieldname, value, swath=1))
+        #self.pakbus.unpack_set_values_response(msg)
+        return msg['RespCode']
 
     def bye(self):
         '''Send a bye command.'''

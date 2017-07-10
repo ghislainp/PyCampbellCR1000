@@ -38,6 +38,16 @@ def settime_cmd(args, device):
     print("Current Time : %s" % device.gettime().strftime("%Y-%m-%d %H:%M"))
 
 
+def getvalue_cmd(args, device):
+    '''Get value command.'''
+    print("%s" % (device.get_value(args.tablename, args.fieldname)))
+
+
+def setvalue_cmd(args, device):
+    '''Set value command.'''
+    ret = device.set_value(args.tablename, args.fieldname, args.value, type_="ASCIIZ")
+    print("%i" % ret)
+
 def getprogstat_cmd(args, device):
     '''Getprogstat command.'''
     data = device.getprogstat()
@@ -179,6 +189,22 @@ def main():
                                func=settime_cmd)
     subparser.add_argument('datetime', help='The chosen datetime value. '
                                             '(like : "%s")' % NOW)
+
+    # getvalue command
+    subparser = get_cmd_parser('getvalue', subparsers,
+                               help='Get the value of the field in table',
+                               func=getvalue_cmd)
+    subparser.add_argument('tablename', help='The name of the table')
+    subparser.add_argument('fieldname', help='The name of the field')
+
+   # setvalue command
+    subparser = get_cmd_parser('setvalue', subparsers,
+                               help='Set the value of the field in table',
+                               func=setvalue_cmd)
+    subparser.add_argument('tablename', help='The name of the table')
+    subparser.add_argument('fieldname', help='The name of the field')
+    subparser.add_argument('value', help='The value to set')
+
 
     # getprogstat command
     subparser = get_cmd_parser('getprogstat', subparsers,
