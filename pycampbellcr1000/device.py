@@ -304,36 +304,50 @@ class CR1000(object):
             data['CompTime'] = nsec_to_time(data['CompTime'])
         return data
 
-    def get_values(self, tablename, fieldname, swath=1, type_=None):
-        """Get the values from a variable as a list, possibly returning many variable if swath>1"""
+    def get_value(self, tablename, fieldname, swath=None, type_=None):
+        """Get the value or values from a variable"""
 
         if type_ is None:  # return in native type
-            type_ = self.table_fields(tablename)[fieldname]['FieldType']
+            varname = fieldname.split('(', 1)[0]  # remove the parenthesis
+            type_ = self.table_fields(tablename)[varname]['FieldType']
+
+        if swath is None:
+            if '(' in fieldname: # we consider we want only one element
+                swath = 1
+            else:
+                # we want all the elements of the array
+                swath = self.table_fields(tablename)[fieldname]['Dimension']
 
         # Send Get Values Command and wait for repsonse
         hdr, msg, send_time = self.send_wait(self.pakbus.get_values_cmd(tablename, type_, fieldname, swath=swath))
 
         values = self.pakbus.unpack_get_values_response(msg)['Values']
-        parse = self.pakbus.parse_values(values, type_)
-        return parse
+        parse = self.pakbus.parse_values(values, type_, swath=swath)
+        if type_.startswith("Bool"):
+            parse = map(bool, parse)
 
-    def get_value(self, tablename, fieldname, type_=None):
-        """Get the value from a variable"""
-
-        return self.get_values(tablename, fieldname, swath=1, type_=type_)[0]
+        if swath == 1:
+            return parse[0]
+        else:
+            return parse
 
     def set_value(self, tablename, fieldname, value, type_=None):
         """Set the value for a variable"""
 
         if type_ is None:  # try to guess
-            if isinstance(value, float):
+            v = value[0] if isinstance(value, list) else value
+
+            if isinstance(v, float):
                 type_ = "IEEE8L"
-            elif isinstance(value, int):
+            elif isinstance(v, int):
                 type_ = "Long"
+            elif isinstance(v, bool):
+                type_ = "Bool4"
+                value = -1 if value else 0
             else:
                 type_ = "ASCIIZ"
 
-        hdr, msg, send_time = self.send_wait(self.pakbus.set_values_cmd(tablename, type_, fieldname, value, swath=1))
+        hdr, msg, send_time = self.send_wait(self.pakbus.set_values_cmd(tablename, type_, fieldname, value))
         #self.pakbus.unpack_set_values_response(msg)
         return msg['RespCode']
 

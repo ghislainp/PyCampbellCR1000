@@ -837,7 +837,6 @@ type_:         Type name as defined in datatype (e.g. 'Byte')
 field_name:    Field name (including index if applicable)
 swath:        Number of columns to retrieve from an indexed field
 """
-
         transac_id = self.transaction.next_id()
         # BMP5 Application Packet
         hdr = self.pack_header(0x1)
@@ -866,27 +865,29 @@ swath:        Number of columns to retrieve from an indexed field
         values, size = self.decode_bin(swath * [type_], raw)
         return values
 
-    def set_values_cmd(self, table_name, type_, field_name, value, swath=1):
+    def set_values_cmd(self, table_name, type_, field_name, value):
         """
      Create Set Values Command packet
 
      table_name:    Table name as string
      type_:         Type name as defined in datatype (e.g. 'Byte')
      field_name:    Field name (including index if applicable)
-     swath:        Number of columns to retrieve from an indexed field
-     value:        Values to set in the datalogger repeated as needed according to the Swath. The TypeCode
-                   and the number of elements requested
-                   determine the size of this field.
+     value:        Values to set in the datalogger repeated as needed.
      """
 
-#        if swath == 1:
-#            value = [value]
+        if isinstance(value, list):  # could be a collection.Sequence but string must be detected. Need six... which is an external dep
+            swath = len(value)
+            type_ = [type_] * swath
+        else:
+            value = [value]
+            type_ = [type_]
+            swath = 1
 
         transac_id = self.transaction.next_id()
         # BMP5 Application Packet
         hdr = self.pack_header(0x1)
-        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2', type_],
-                                [0x1b, transac_id, self.security_code, table_name, self.DATATYPE[type_]['code'], field_name, swath, value])
+        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2'] + type_,
+                                [0x1b, transac_id, self.security_code, table_name, self.DATATYPE[type_[0]]['code'], field_name, swath] + value)
 
         return b''.join((hdr, msg)), transac_id
 

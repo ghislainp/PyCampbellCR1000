@@ -48,6 +48,7 @@ def setvalue_cmd(args, device):
     ret = device.set_value(args.tablename, args.fieldname, args.value, type_="ASCIIZ")
     print("%i" % ret)
 
+
 def getprogstat_cmd(args, device):
     '''Getprogstat command.'''
     data = device.getprogstat()
@@ -174,6 +175,9 @@ def main():
     parser.add_argument('--version', action='version',
                         version='PyCR1000 version %s' % VERSION,
                         help='Print PyCR1000 version number and exit.')
+
+    parser.add_argument('--debug', action="store_true", default=False,
+                        help='Display log')  # needed in case not command is given
 
     subparsers = parser.add_subparsers(title='The PyCR1000 commands')
     # gettime command
