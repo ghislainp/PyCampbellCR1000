@@ -197,11 +197,12 @@ class CR1000(object):
         if start_date is not None:
             mode = 0x07  # collect from p1 to p2 (nsec)
             p1 = time_to_nsec(start_date)
-            p2 = time_to_nsec(stop_date or datetime.now())
+            p2 = time_to_nsec(stop_date or datetime.utcnow())
         else:
             mode = 0x03  # collect all
             p1 = 0
             p2 = 0
+
 
         tabledef = self.table_def
         # Get table number
@@ -251,7 +252,7 @@ class CR1000(object):
         '''
         self.ping_node()
         start_date = start_date or datetime(1990, 1, 1, 0, 0, 1)
-        stop_date = stop_date or datetime.now()
+        stop_date = stop_date or datetime.utcnow()
         more = True
         while more:
             records = ListDict()
