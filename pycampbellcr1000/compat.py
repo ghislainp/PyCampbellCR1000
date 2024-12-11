@@ -91,7 +91,7 @@ elif is_py3:
 
     str = str
     bytes = bytes
-    stdout = sys.stdout.buffer
+    stdout = sys.stdout #.buffer
     xrange = range
 
 

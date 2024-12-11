@@ -177,6 +177,15 @@ class CR1000(object):
         tabledef = self.pakbus.parse_tabledef(data)
         return tabledef
 
+    def table_fields(self, tablename):
+        """Return a dict with the field_name as key and field information as value"""
+        fields = [i['Fields'] for i in self.table_def if i['Header']['TableName'] == tablename]
+
+        if len(fields) != 1:
+            raise Exception("TableName is absent (or duplicated)")
+
+        return {item['field_name']: item for item in fields[0]}
+
     def list_tables(self):
         '''List the tables available in the datalogger.'''
         return [item['Header']['TableName'] for item in self.table_def]
@@ -295,6 +304,53 @@ class CR1000(object):
         if data:
             data['CompTime'] = nsec_to_time(data['CompTime'])
         return data
+
+    def get_value(self, tablename, fieldname, swath=None, type_=None):
+        """Get the value or values from a variable"""
+
+        if type_ is None:  # return in native type
+            varname = fieldname.split('(', 1)[0]  # remove the parenthesis
+            type_ = self.table_fields(tablename)[varname]['FieldType']
+
+        if swath is None:
+            if '(' in fieldname: # we consider we want only one element
+                swath = 1
+            else:
+                # we want all the elements of the array
+                swath = self.table_fields(tablename)[fieldname]['Dimension']
+
+        # Send Get Values Command and wait for repsonse
+        hdr, msg, send_time = self.send_wait(self.pakbus.get_values_cmd(tablename, type_, fieldname, swath=swath))
+
+        values = self.pakbus.unpack_get_values_response(msg)['Values']
+        parse = self.pakbus.parse_values(values, type_, swath=swath)
+        if type_.startswith("Bool"):
+            parse = map(bool, parse)
+
+        if swath == 1:
+            return parse[0]
+        else:
+            return parse
+
+    def set_value(self, tablename, fieldname, value, type_=None):
+        """Set the value for a variable"""
+
+        if type_ is None:  # try to guess
+            v = value[0] if isinstance(value, list) else value
+
+            if isinstance(v, float):
+                type_ = "IEEE8L"
+            elif isinstance(v, int):
+                type_ = "Long"
+            elif isinstance(v, bool):
+                type_ = "Bool4"
+                value = -1 if value else 0
+            else:
+                type_ = "ASCIIZ"
+
+        hdr, msg, send_time = self.send_wait(self.pakbus.set_values_cmd(tablename, type_, fieldname, value))
+        #self.pakbus.unpack_set_values_response(msg)
+        return msg['RespCode']
 
     def bye(self):
         '''Send a bye command.'''

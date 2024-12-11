@@ -258,25 +258,29 @@ class PakBus(object):
             fmt = self.DATATYPE[type_]['fmt']  # get default format for type_
             value = values[i]
 
-            if type_ == 'ASCIIZ':
-                # special handling: nul-terminated string
-                value += '\0'
-                # Add nul to end of string
-                fmt_ = str('%d%s' % (len(value), fmt))
-                if is_py3:
-                    enc = struct.pack(fmt_, bytes(value, encoding='utf8'))
-                else:
+            try:
+                if type_ == 'ASCIIZ':
+                    # special handling: nul-terminated string
+                    value += '\0'
+                    # Add nul to end of string
+                    fmt_ = str('%d%s' % (len(value), fmt))
+                    if is_py3:
+                        enc = struct.pack(fmt_, bytes(value, encoding='utf8'))
+                    else:
+                        enc = struct.pack(fmt_, str(value))
+                elif type_ == 'ASCII':
+                    # special handling: fixed-length string
+                    fmt_ = str('%d%s' % (len(value), fmt))
                     enc = struct.pack(fmt_, str(value))
-            elif type_ == 'ASCII':
-                # special handling: fixed-length string
-                fmt_ = str('%d%s' % (len(value), fmt))
-                enc = struct.pack(fmt_, str(value))
-            elif type_ == 'NSec':
-                # special handling: NSec time
-                enc = struct.pack(str(fmt), value[0], value[1])
-            else:
-                # default encoding scheme
-                enc = struct.pack(str(fmt), value)
+                elif type_ == 'NSec':
+                    # special handling: NSec time
+                    enc = struct.pack(str(fmt), value[0], value[1])
+                else:
+                    # default encoding scheme
+                    enc = struct.pack(str(fmt), value)
+            except struct.error as e:
+                print(type_, value)
+                raise e
 
             buff.append(enc)
         return b''.join(buff)
@@ -830,6 +834,78 @@ class PakBus(object):
         # Get flag if more records exist
         (more_rec,), size = self.decode_bin(['Bool'], raw[offset:])
         return recdata, more_rec
+
+    def get_values_cmd(self, table_name, type_, field_name, swath=1):
+        """ Create Get Values Command packet
+
+table_name:    Table name as string
+type_:         Type name as defined in datatype (e.g. 'Byte')
+field_name:    Field name (including index if applicable)
+swath:        Number of columns to retrieve from an indexed field
+"""
+        transac_id = self.transaction.next_id()
+        # BMP5 Application Packet
+        hdr = self.pack_header(0x1)
+        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2'],
+                               [0x1a, transac_id, self.security_code, table_name, self.DATATYPE[type_]['code'], field_name, swath])
+        return b''.join((hdr, msg)), transac_id
+
+    def unpack_get_values_response(self, msg):
+        """
+     Decode Get Values Response packet
+
+     msg: decoded default message - must contain msg['raw']
+     """
+        [msg['RespCode']], size = self.decode_bin(['Byte'], msg['raw'][2])
+        msg['Values'] = msg['raw'][3:] # return raw coded values for later parsing
+        return msg
+
+    def parse_values(self, raw, type_, swath=1):
+        """
+     Parse values retrieved from get values command
+
+     raw:      Raw coded data string containing values (as returned by decode_pkt)
+     Type:     Data type name as defined in datatype
+     Swath:    Number of columns to retrieve from an indexed field
+     """
+        values, size = self.decode_bin(swath * [type_], raw)
+        return values
+
+    def set_values_cmd(self, table_name, type_, field_name, value):
+        """
+     Create Set Values Command packet
+
+     table_name:    Table name as string
+     type_:         Type name as defined in datatype (e.g. 'Byte')
+     field_name:    Field name (including index if applicable)
+     value:        Values to set in the datalogger repeated as needed.
+     """
+
+        if isinstance(value, list):  # could be a collection.Sequence but string must be detected. Need six... which is an external dep
+            swath = len(value)
+            type_ = [type_] * swath
+        else:
+            value = [value]
+            type_ = [type_]
+            swath = 1
+
+        transac_id = self.transaction.next_id()
+        # BMP5 Application Packet
+        hdr = self.pack_header(0x1)
+        msg = self.encode_bin(['Byte', 'Byte', 'UInt2', 'ASCIIZ', 'Byte', 'ASCIIZ', 'UInt2'] + type_,
+                                [0x1b, transac_id, self.security_code, table_name, self.DATATYPE[type_[0]]['code'], field_name, swath] + value)
+
+        return b''.join((hdr, msg)), transac_id
+
+    def unpack_set_values_response(self, msg):
+        """
+     Decode Set Values Response packet
+
+     msg: decoded default message - must contain msg['raw']
+     """
+        [msg['RespCode']], size = self.decode_bin(['Byte'], msg['raw'][2])
+        #msg['Values'] = msg['raw'][3:] # return raw coded values for later parsing
+        return msg
 
     def __del__(self):
         self.link.close()
