@@ -213,7 +213,7 @@ class CR1000(object):
                 tablenbr = i + 1
                 break
         if tablenbr is None:
-            raise StandardError('table %s not found' % tablename)
+            raise Exception('table %s not found' % tablename)
         # Get table definition signature
         tabledefsig = tabledef[tablenbr - 1]['Signature']
 
@@ -271,7 +271,13 @@ class CR1000(object):
                         new_rec["Datetime"] = item['TimeOfRec']
                         new_rec["RecNbr"] = item['RecNbr']
                         for key in item['Fields']:
-                            new_rec["%s" % key] = item['Fields'][key]
+                            val = item['Fields'][key]
+                            dkey = key.decode("utf-8")
+                            if isinstance(val, list):
+                                for k, v in enumerate(val):
+                                    new_rec[f"{dkey}({k})"] = v
+                            else:
+                                new_rec[f"{dkey}"] = val
                         records.append(new_rec)
 
             if records:
