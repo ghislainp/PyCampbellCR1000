@@ -1,29 +1,30 @@
 # coding: utf8
-'''
-    PyCampbellCRX.tests.test_device
-    -------------------------------
+"""
+PyCampbellCRX.tests.test_device
+-------------------------------
 
-    The device test suite for PyCampbelCR1000.
+The device test suite for PyCampbelCR1000.
 
-    :copyright: Copyright 2012 Salem Harrache and contributors, see AUTHORS.
-    :license: GNU GPL v3.
+:copyright: Copyright 2012 Salem Harrache and contributors, see AUTHORS.
+:license: GNU GPL v3.
 
-'''
+"""
+
 from __future__ import unicode_literals
+
 from datetime import datetime, timedelta
 
-from ..logger import active_logger
 from ..device import CR1000
-
+from ..logger import active_logger
 
 active_logger()
 
 
 class TestDevice:
-    ''' Test device.'''
+    """Test device."""
 
     def setup_class(self):
-        '''Setup common data.'''
+        """Setup common data."""
         pass
 
     def test_gettime(self, url):
@@ -44,19 +45,19 @@ class TestDevice:
 
     def test_settings(self, url):
         device = CR1000.from_url(url, 1)
-        assert device.settings[0]['SettingId'] == 0
-        print (device.settings[0]['SettingValue'])
-        print (type(device.settings[0]['SettingValue']))
-        assert b"CR" in device.settings[0]['SettingValue']
-        assert device.settings[0]['ReadOnly'] == 1
-        assert device.settings[0]['LargeValue'] == 0
+        assert device.settings[0]["SettingId"] == 0
+        print(device.settings[0]["SettingValue"])
+        print(type(device.settings[0]["SettingValue"]))
+        assert b"CR" in device.settings[0]["SettingValue"]
+        assert device.settings[0]["ReadOnly"] == 1
+        assert device.settings[0]["LargeValue"] == 0
 
     def test_list_and_get_file(self, url):
         device = CR1000.from_url(url, 1)
         files = device.list_files()
         if len(files) > 1:
             for filename in files[1:]:
-                filename = filename.decode('utf-8')
+                filename = filename.decode("utf-8")
                 if filename != "CPU:":
                     fd = device.getfile(filename)
                     assert fd != b""
@@ -71,7 +72,7 @@ class TestDevice:
         if len(first_records) > 0:
             rec = first_records[0]
             for next_rec in first_records[1:]:
-                assert rec['Datetime'] < next_rec['Datetime']
+                assert rec["Datetime"] < next_rec["Datetime"]
                 rec = next_rec
 
     def get_data(self, device, table):
@@ -87,12 +88,12 @@ class TestDevice:
         tables = device.list_tables()
         if len(tables) > 0:
             for table in tables:
-                table = table.decode('utf-8')
+                table = table.decode("utf-8")
                 self.get_data(device, table)
                 self.get_data_generator(device, table)
 
     def test_getprogstat(self, url):
         device = CR1000.from_url(url, 1)
-        osversion = device.getprogstat()['OSVer'].decode('utf-8')
+        osversion = device.getprogstat()["OSVer"].decode("utf-8")
         osversion = osversion.split(".")[0]
-        assert (osversion == "CR800" or osversion == "CR1000")
+        assert osversion == "CR800" or osversion == "CR1000"
