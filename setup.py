@@ -42,7 +42,7 @@ if sys.version_info < (2, 7) or (3,) <= sys.version_info < (3, 4):
 with open(
     os.path.join(os.path.dirname(__file__), "pycampbellcr1000", "__init__.py")
 ) as init_py:
-    release = re.search("VERSION = '([^']+)'", init_py.read()).group(1)
+    release = re.search(r"VERSION = \"([^']+)\"", init_py.read()).group(1)
 # The short X.Y version.
 version = release.rstrip("dev")
 
