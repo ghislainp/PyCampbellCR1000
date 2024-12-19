@@ -301,7 +301,7 @@ class CR1000(object):
                             dkey = key.decode("utf-8")
                             if isinstance(val, list):
                                 for k, v in enumerate(val):
-                                    new_rec[f"{dkey}({k})"] = v
+                                    new_rec[f"{dkey}({k + 1})"] = v
                             else:
                                 new_rec[f"{dkey}"] = val
                         records.append(new_rec)
